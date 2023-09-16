@@ -1,0 +1,22 @@
+{
+  "name": "logseq-plugin-privacy",
+  "version": "0.0.1",
+  "main": "dist/index.html",
+  "author": "Guillaume Jounel",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build"
+  },
+  "description": "Hide references to sensitive pages",
+  "license": "MIT",
+  "browserslist": [
+    "chrome 80"
+  ],
+  "logseq": {
+    "id": "logseq-plugin-privacy"
+  },
+  "devDependencies": {
+    "@logseq/libs": "^0.0.15",
+    "vite": "^4.4.9"
+  }
+}
