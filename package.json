@@ -17,6 +17,7 @@
   },
   "devDependencies": {
     "@logseq/libs": "^0.0.15",
+    "prettier": "3.0.2",
     "vite": "^4.4.9"
   }
 }
