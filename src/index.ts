@@ -24,14 +24,8 @@ function updateSensitiveIcon(isSensitive: boolean) {
   });
 }
 
-async function isPageSensitive(
-  page: PageEntity | BlockEntity,
-): Promise<boolean> {
-  const isSensitive = await logseq.Editor.getBlockProperty(
-    page.uuid,
-    SENSITIVE,
-  );
-  return isSensitive;
+function isPageSensitive(page: PageEntity | BlockEntity): boolean {
+  return page.properties?.[SENSITIVE] || false;
 }
 
 async function isCurrentPageSensitive(
@@ -39,7 +33,7 @@ async function isCurrentPageSensitive(
 ) {
   const page = await logseq.Editor.getCurrentPage();
   if (page == null) return false;
-  const isSensitive = await isPageSensitive(page);
+  const isSensitive = isPageSensitive(page);
   if (callback != null) callback(isSensitive, page as PageEntity);
   return isSensitive;
 }
@@ -71,7 +65,7 @@ async function getAllSensitiveUuids() {
   if (pages == null) return;
 
   for (let page of pages) {
-    if (await isPageSensitive(page)) {
+    if (isPageSensitive(page)) {
       const pageBlocks = await logseq.Editor.getPageBlocksTree(page.uuid);
       addToUuidList(page);
       console.log(page.name, "IS SENSITIVE");
@@ -82,12 +76,33 @@ async function getAllSensitiveUuids() {
   }
 }
 
+function hideReferenceBlocks() {
+  logseq.provideStyle({
+    key: "css-privacy-init",
+    style: `
+    .references-blocks .initial {
+      filter: blur(3px);
+    }`,
+  });
+}
+
+function showReferenceBlocks() {
+  logseq.provideStyle({
+    key: "css-privacy-init",
+    // semi visible references still need to be hidden
+    style: `
+    .references-blocks .initial:has(.animate-pulse) {
+      filter: blur(3px);
+    }`,
+  });
+}
+
 function obfuscateUuids(uuids: PageIdentity[]) {
   // .fade-enter div .initial:has([blockid="${uuid}"]),
   let cssSensitiveBlocksSelector = uuids
     .map(
       (uuid) =>
-        `.initial:has([blockid="${uuid}"])>div>div.breadcrumb, .initial:has([blockid="${uuid}"])>div>div.blocks-container, .references-blocks div[blockid="${uuid}"], span[data-block-ref="${uuid}"] .font-medium, span[data-block-ref="${uuid}"] span.inline-wrap`,
+        `.references-blocks .initial:has([blockid="${uuid}"]), span[data-block-ref="${uuid}"] .search-result .font-medium, span[data-block-ref="${uuid}"] .search-result span.inline-wrap, span[data-block-ref="${uuid}"] .search-result .ls-icon-chevron-right`,
     )
     .join(", ");
 
@@ -106,24 +121,12 @@ function obfuscateUuids(uuids: PageIdentity[]) {
       color: inherit;
     }`,
   });
-  logseq.provideStyle({
-    key: "css-privacy-init",
-    style: `
-    .initial {
-      filter: blur(0px);
-    }`,
-  });
+  showReferenceBlocks();
 }
 
 async function main() {
   console.log("LOAD PLUGIN sensitivity");
-  logseq.provideStyle({
-    key: "css-privacy-init",
-    style: `
-    .initial {
-      filter: blur(3px);
-    }`,
-  });
+  hideReferenceBlocks();
 
   // Handle page sensitivity button
   logseq.provideModel({
@@ -159,6 +162,7 @@ async function main() {
   // Update page sensitivity button
   updateCurrentPageSensitiveIcon();
   logseq.App.onRouteChanged(async ({ path, template }) => {
+    hideReferenceBlocks();
     updateCurrentPageSensitiveIcon();
     await getAllSensitiveUuids();
     obfuscateUuids(sensitiveUuids);
@@ -170,7 +174,7 @@ async function main() {
   setTimeout(async () => {
     await getAllSensitiveUuids();
     obfuscateUuids(sensitiveUuids);
-  }, 1000);
+  }, 2000);
 }
 
 // bootstrap
