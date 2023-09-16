@@ -24,12 +24,23 @@ function updateSensitiveIcon(isSensitive: boolean) {
   });
 }
 
+async function isPageSensitive(
+  page: PageEntity | BlockEntity,
+): Promise<boolean> {
+  const isSensitive = await logseq.Editor.getBlockProperty(
+    page.uuid,
+    SENSITIVE,
+  );
+  return isSensitive;
+}
+
 async function isCurrentPageSensitive(
-  callback?: (sensitive: boolean, uuid: PageIdentity) => Promise<void>,
+  callback?: (sensitive: boolean, page: PageEntity) => Promise<void>,
 ) {
   const page = await logseq.Editor.getCurrentPage();
-  const isSensitive = page && page.properties?.[SENSITIVE];
-  if (callback != null && page != null) callback(isSensitive, page.uuid);
+  if (page == null) return false;
+  const isSensitive = await isPageSensitive(page);
+  if (callback != null) callback(isSensitive, page as PageEntity);
   return isSensitive;
 }
 
@@ -41,12 +52,12 @@ async function updateCurrentPageSensitiveIcon() {
   }
 }
 
-function recurseChildren(block: BlockEntity, func: any) {
+function addChildrenToUuidList(block: BlockEntity) {
   if (!block) return;
-  func(block);
+  addToUuidList(block);
   let children = (block?.children as BlockEntity[]) || [];
   for (let child of children) {
-    recurseChildren(child, func);
+    addChildrenToUuidList(child);
   }
 }
 
@@ -55,32 +66,28 @@ function addToUuidList(block: BlockEntity | PageEntity) {
 }
 
 async function getAllSensitiveUuids() {
+  sensitiveUuids = [];
   const pages = await logseq.Editor.getAllPages();
-  if (pages == null) {
-    return;
-  }
+  if (pages == null) return;
 
   for (let page of pages) {
-    if (!page.uuid) continue;
-    const isSensitive = await logseq.Editor.getBlockProperty(
-      page.uuid,
-      SENSITIVE,
-    );
-    if (isSensitive) {
+    if (await isPageSensitive(page)) {
       const pageBlocks = await logseq.Editor.getPageBlocksTree(page.uuid);
       addToUuidList(page);
+      console.log(page.name, "IS SENSITIVE");
       for (let block of pageBlocks) {
-        recurseChildren(block, addToUuidList);
+        addChildrenToUuidList(block);
       }
     }
   }
 }
 
 function obfuscateUuids(uuids: PageIdentity[]) {
+  // .fade-enter div .initial:has([blockid="${uuid}"]),
   let cssSensitiveBlocksSelector = uuids
     .map(
       (uuid) =>
-        `div.initial:has(.animate-pulse) .initial, .initial:has([blockid="${uuid}"])>div>div.breadcrumb, .initial:has([blockid="${uuid}"])>div>div.blocks-container, .references-blocks div[blockid="${uuid}"], span[data-block-ref="${uuid}"] .font-medium, span[data-block-ref="${uuid}"] span.inline-wrap`,
+        `.initial:has([blockid="${uuid}"])>div>div.breadcrumb, .initial:has([blockid="${uuid}"])>div>div.blocks-container, .references-blocks div[blockid="${uuid}"], span[data-block-ref="${uuid}"] .font-medium, span[data-block-ref="${uuid}"] span.inline-wrap`,
     )
     .join(", ");
 
@@ -99,17 +106,33 @@ function obfuscateUuids(uuids: PageIdentity[]) {
       color: inherit;
     }`,
   });
+  logseq.provideStyle({
+    key: "css-privacy-init",
+    style: `
+    .initial {
+      filter: blur(0px);
+    }`,
+  });
 }
 
 async function main() {
+  console.log("LOAD PLUGIN sensitivity");
+  logseq.provideStyle({
+    key: "css-privacy-init",
+    style: `
+    .initial {
+      filter: blur(3px);
+    }`,
+  });
+
   // Handle page sensitivity button
   logseq.provideModel({
     async toggleSensitivity() {
       await isCurrentPageSensitive(
-        async (isSensitive: boolean, pageUuid: PageIdentity) => {
-          const pageBlocks = await logseq.Editor.getPageBlocksTree(pageUuid);
+        async (isSensitive: boolean, page: PageEntity) => {
+          const pageBlocks = await logseq.Editor.getPageBlocksTree(page.uuid);
           if (isSensitive) {
-            await logseq.Editor.removeBlockProperty(pageUuid, SENSITIVE);
+            await logseq.Editor.removeBlockProperty(page.uuid, SENSITIVE);
             await logseq.Editor.removeBlockProperty(
               pageBlocks[0].uuid,
               SENSITIVE,
@@ -117,7 +140,7 @@ async function main() {
             updateSensitiveIcon(false);
           } else {
             await logseq.Editor.upsertBlockProperty(
-              pageUuid,
+              page.uuid,
               SENSITIVE,
               "true",
             );
@@ -138,13 +161,11 @@ async function main() {
   logseq.App.onRouteChanged(async ({ path, template }) => {
     updateCurrentPageSensitiveIcon();
     await getAllSensitiveUuids();
+    obfuscateUuids(sensitiveUuids);
   });
 
-  // TODO: Use typescript
   // TODO: Check sensitive prop when block is manually edited
-  // TODO: Add setting to display on hover
-  // TODO: Add setting to hide titles
-
+  // TODO: Add setting to display on hover, hide titles
   // TODO: Track uuids and necessary changes
   setTimeout(async () => {
     await getAllSensitiveUuids();
